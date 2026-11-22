@@ -1,8 +1,12 @@
 import torch.nn as nn
 from embedding import Embedding
 from positional_encoding import PositionalEncoding
+from encoder import EncoderLayer
 from encoder import Encoder
+from decoder import DecoderLayer
 from decoder import Decoder
+from attention import MultiHeadAttention
+from ffn import FeedForwardNetwork
 from projection import Projection
 
 
@@ -57,3 +61,50 @@ class Transformer(nn.Module):
             enc_output, dec_input, dec_self_attn_mask, dec_cross_attn_mask
         )
         return self.project(output)
+
+
+def build_transformer(
+    src_vocab_size,
+    tgt_vocab_size,
+    N=6,
+    d_model=512,
+    d_ff=2048,
+    h=8,
+    seq_len=5000,
+    dropout=0.1,
+):
+    # Encoder
+    enc_self_attention = MultiHeadAttention(h, d_model, dropout)
+    enc_ffn = FeedForwardNetwork(d_model, d_ff, dropout)
+    encoderLayer = EncoderLayer(enc_self_attention, enc_ffn, d_model, dropout)
+    encoder = Encoder(encoderLayer, N)
+    enc_embed = Embedding(d_model, src_vocab_size)
+
+    # Decoder
+    dec_self_attention = MultiHeadAttention(h, d_model, dropout)
+    dec_cross_attention = MultiHeadAttention(h, d_model, dropout)
+    dec_ffn = FeedForwardNetwork(d_model, d_ff, dropout)
+    decoderLayer = DecoderLayer(
+        dec_self_attention, dec_cross_attention, dec_ffn, d_model, dropout
+    )
+    decoder = Decoder(decoderLayer, N)
+    dec_embed = Embedding(d_model, tgt_vocab_size)
+
+    # Positional Encoding is reused for both encoder and decoder
+    pos_encod = PositionalEncoding(seq_len, d_model, dropout)
+    projection = Projection(d_model, tgt_vocab_size)
+
+    model = Transformer(
+        encoder,
+        decoder,
+        enc_embed,
+        dec_embed,
+        pos_encod,
+        projection,
+    )
+
+    # Xavier initialization
+    for p in model.parameters():
+        if p.dim() > 1:
+            nn.init.xavier_uniform_(p)
+    return model
